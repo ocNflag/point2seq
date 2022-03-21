@@ -1,0 +1,154 @@
+CLASS_NAMES: ['Vehicle']
+
+WORK_DIR: /home/xuhang/xueyj/event_logs/waymo_trainval
+CLOUD_WORK_DIR: /cache/output/
+
+DATA_CONFIG:
+  _BASE_CONFIG_: cfgs/dataset_configs/waymo_dataset.yaml
+  SAMPLED_INTERVAL: {
+    'train': 5,
+    'test': 1
+  }
+  DATA_PROCESSOR:
+    - NAME: mask_points_and_boxes_outside_range
+      REMOVE_OUTSIDE_BOXES: True
+
+    - NAME: shuffle_points
+      SHUFFLE_ENABLED: {
+        'train': True,
+        'test': False
+      }
+
+    - NAME: transform_points_to_voxels
+      VOXEL_SIZE: [ 0.1, 0.1, 0.15 ]
+      MAX_POINTS_PER_VOXEL: 5
+      MAX_NUMBER_OF_VOXELS: {
+        'train': 150000,
+        'test': 200000
+      }
+
+
+MODEL:
+  NAME: E2ENet
+  PRETRAINED_CKPT: ''
+  CLOUD_PRETRAINED_CKPT: ''
+
+  VFE:
+    NAME: MeanVFE
+
+  BACKBONE_3D:
+    NAME: VoxelResBackBone8x
+
+  MAP_TO_BEV:
+    NAME: HeightCompression
+    NUM_BEV_FEATURES: 256
+
+  BACKBONE_2D:
+    NAME: BaseBEVBackbone
+
+    LAYER_NUMS: [ 5, 5 ]
+    LAYER_STRIDES: [ 1, 2 ]
+    NUM_FILTERS: [ 128, 256 ]
+    UPSAMPLE_STRIDES: [ 1, 2 ]
+    NUM_UPSAMPLE_FILTERS: [ 256, 256 ]
+
+  DENSE_HEAD:
+    NAME: E2ESeqFusionHead
+    CLASS_AGNOSTIC: False
+    TASKS: &tasks_head
+      - num_class: 1
+        class_names: [ "Vehicle" ]
+        template_box: [4.7, 2.1, 1.7]
+
+    OUT_SIZE_FACTOR: &osf 8
+    USE_FOCAL_LOSS: &focal True
+
+    PARAMETERS:
+      shared_ch: 64
+      common_heads: {
+        'head_channels': 32,
+        'kernel_size': 3,
+        'code_size': &codesize 7,
+        'encode_angle_by_sincos': &encs True,
+        'init_bias': -2.19
+      }
+
+    TARGET_ASSIGNER_CONFIG:
+      tasks: *tasks_head
+      out_size_factor: *osf
+      dense_reg: 1
+      gaussian_overlap: 0.1
+      fg_enlarge_ratio: 1
+      max_objs: 500
+      min_radius: 2
+      mapping: {
+        "Vehicle": 1,
+      }
+
+    CODER_CONFIG:
+      BOX_CODER: CenterCoder
+      BOX_CODER_CONFIG: {
+        'code_size': *codesize,
+        'encode_angle_by_sincos': *encs
+      }
+
+    AUX_LOSS_WEIGHTS: {
+      'loss_center': 0.25,
+      'loss_corner': 0.25,
+      'loss_foreground': 0.25
+    }
+
+    SET_CRIT_CONFIG: {
+      'weight_dict': {
+        'loss_ce': 1,
+        'loss_bbox': 2,
+      },
+      'losses': [ 'loss_ce', 'loss_bbox'],
+      'sigma': 3.0,
+      'code_weights': [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 ],
+      'use_focal_loss': *focal,
+      'gamma': 2.0,
+      'alpha': 0.25
+    }
+    MATCHER: TimeMatcher
+    MATCHER_CONFIG: {
+      'weight_dict': {
+        'loss_ce': 0.25,
+        'loss_bbox': 0.75
+      },
+      'losses': [ 'loss_ce', 'loss_bbox'],
+      'code_weights': [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 ],
+      'use_focal_loss': *focal,
+      'box_pred_metric': loss_bbox
+    }
+    TEST_CONFIG:
+      num_queries: 300
+      k_list: [ 300, ]
+      thresh_list: [ 0.2, ]
+      max_filter: False
+      kernel_size: 3
+
+  POST_PROCESSING:
+    RECALL_THRESH_LIST: [ 0.3, 0.5, 0.7 ]
+    EVAL_METRIC: waymo
+
+OPTIMIZATION:
+  BATCH_SIZE_PER_GPU: 4
+  NUM_EPOCHS: 180
+
+  OPTIMIZER: adam_onecycle
+  LR: 0.006
+  WEIGHT_DECAY: 0.01
+  MOMENTUM: 0.9
+
+  MOMS: [ 0.95, 0.85 ]
+  PCT_START: 0.4
+  DIV_FACTOR: 10
+  DECAY_STEP_LIST: [ 35, 45 ]
+  LR_DECAY: 0.1
+  LR_CLIP: 0.0000001
+
+  LR_WARMUP: False
+  WARMUP_EPOCH: 1
+
+  GRAD_NORM_CLIP: 10

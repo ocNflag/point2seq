@@ -1,0 +1,140 @@
+CLASS_NAMES: [ 'Car', 'Bus', 'Truck', 'Pedestrian', 'Cyclist' ]
+
+WORK_DIR: /home/xuhang/xueyj/event_logs/huawei_trainval
+CLOUD_WORK_DIR: /cache/output/
+
+DATA_CONFIG:
+  _BASE_CONFIG_: cfgs/dataset_configs/huawei_dataset.yaml
+
+  DATA_SPLIT: {
+    'train': train,
+    'test': test
+  }
+
+MODEL:
+  NAME: E2ENet
+  PRETRAINED_CKPT: ''
+  CLOUD_PRETRAINED_CKPT: ''
+
+  VFE:
+    NAME: MeanVFE
+
+  BACKBONE_3D:
+    NAME: VoxelResBackBone8x
+
+  MAP_TO_BEV:
+    NAME: HeightCompression
+    NUM_BEV_FEATURES: 256
+
+  BACKBONE_2D:
+    NAME: BaseBEVBackbone
+
+    LAYER_NUMS: [ 5, 5 ]
+    LAYER_STRIDES: [ 1, 2 ]
+    NUM_FILTERS: [ 128, 256 ]
+    UPSAMPLE_STRIDES: [ 1, 2 ]
+    NUM_UPSAMPLE_FILTERS: [ 256, 256 ]
+
+  DENSE_HEAD:
+    NAME: E2ESeqHead
+    CLASS_AGNOSTIC: False
+    TASKS: &tasks_head
+      - num_class: 1
+        class_names: [ "Car" ]
+        template_box: [ 4.38, 1.87, 1.59 ]
+      - num_class: 1
+        class_names: [ "Bus" ]
+        template_box: [ 11.11, 2.88, 3.41 ]
+      - num_class: 1
+        class_names: [ "Truck" ]
+        template_box: [ 7.52, 2.50, 2.62 ]
+      - num_class: 1
+        class_names: [ "Pedestrian" ]
+        template_box: [ 0.75, 0.76, 1.69 ]
+        code_weights: [ 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0 ]
+      - num_class: 1
+        class_names: [ "Cyclist" ]
+        template_box: [ 2.18, 0.79, 1.43 ]
+
+
+    OUT_SIZE_FACTOR: &osf 8
+    USE_FOCAL_LOSS: &focal True
+
+    PARAMETERS:
+      common_heads: {
+        'head_channels': 64,
+        'kernel_size': 3,
+        'code_size': &codesize 7,
+        'encode_angle_by_sincos': &encs True,
+        'init_bias': -2.19
+      }
+
+    GT_PROCESSOR_CONFIG:
+      tasks: *tasks_head
+      mapping: {
+        "Car": 1,
+        "Bus": 2,
+        "Truck": 3,
+        "Pedestrian": 4,
+        "Cyclist": 5
+      }
+
+    CODER_CONFIG:
+      BOX_CODER: CenterCoder
+      BOX_CODER_CONFIG: {
+        'code_size': *codesize,
+        'encode_angle_by_sincos': *encs
+      }
+
+    SET_CRIT_CONFIG: {
+      'weight_dict': {
+        'loss_ce': 1,
+        'loss_bbox': 1,
+      },
+      'losses': [ 'loss_ce', 'loss_bbox' ],
+      'sigma': 3.0,
+      'code_weights': [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 ],
+      'use_focal_loss': *focal,
+      'gamma': 2.0,
+      'alpha': 0.25
+    }
+    MATCHER: TimeMatcher
+    MATCHER_CONFIG: {
+      'weight_dict': {
+        'loss_ce': 0.25,
+        'loss_bbox': 0.75
+      },
+      'losses': [ 'loss_ce', 'loss_bbox' ],
+      'code_weights': [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 ],
+      'use_focal_loss': *focal,
+      'box_pred_metric': loss_bbox
+    }
+    TEST_CONFIG:
+      num_queries: 500
+      k_list: [ 100, 100, 100, 100, 100 ]
+      thresh_list: [ 0.1, 0.1, 0.1, 0.1, 0.1 ]
+
+  POST_PROCESSING:
+    RECALL_THRESH_LIST: [ 0.3, 0.5, 0.7 ]
+    EVAL_METRIC: huawei
+
+OPTIMIZATION:
+  BATCH_SIZE_PER_GPU: 4
+  NUM_EPOCHS: 80
+
+  OPTIMIZER: adam_onecycle
+  LR: 0.003
+  WEIGHT_DECAY: 0.01
+  MOMENTUM: 0.9
+
+  MOMS: [ 0.95, 0.85 ]
+  PCT_START: 0.4
+  DIV_FACTOR: 10
+  DECAY_STEP_LIST: [ 35, 45 ]
+  LR_DECAY: 0.1
+  LR_CLIP: 0.0000001
+
+  LR_WARMUP: False
+  WARMUP_EPOCH: 1
+
+  GRAD_NORM_CLIP: 10
