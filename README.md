@@ -5,7 +5,7 @@ This is a reproduced repo of Point2Seq for 3D object detection.
 The code is mainly based on [OpenPCDet](https://github.com/open-mmlab/OpenPCDet).
 
 ## Introduction
-We provide code and training configurations of PointSeq on the ONCE and Waymo Open dataset. Checkpoints will not be released.  
+We provide code and training configurations of PointSeq on the ONCE and Waymo Open dataset under ```tools/cfgs```.  
 
 
 ## Requirements
